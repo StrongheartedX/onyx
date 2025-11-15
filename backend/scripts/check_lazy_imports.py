@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
+import platform
 import re
 import sys
 from dataclasses import dataclass
@@ -17,6 +20,156 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def get_cache_dir() -> Path:
+    """
+    Get the cache directory following XDG and macOS conventions.
+
+    Returns:
+        Path to cache directory
+    """
+    system = platform.system()
+
+    # macOS: use ~/Library/Caches
+    if system == "Darwin":
+        cache_dir = Path.home() / "Library" / "Caches"
+    # Linux and other Unix-like: use XDG_CACHE_HOME or ~/.cache
+    elif system == "Linux" or system.startswith("Unix"):
+        xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache_home:
+            cache_dir = Path(xdg_cache_home)
+        else:
+            cache_dir = Path.home() / ".cache"
+    # Windows or unknown: fallback to home directory
+    else:
+        cache_dir = Path.home()
+
+    # Create subdirectory for this script
+    script_cache_dir = cache_dir / "check_lazy_imports"
+    script_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    return script_cache_dir
+
+
+def get_cache_file_path() -> Path:
+    """Get the path to the cache file."""
+    return get_cache_dir() / "cache.json"
+
+
+@dataclass
+class CacheEntry:
+    """Cache entry for a file."""
+
+    mtime: float
+    size: int
+    had_violations: bool = (
+        False  # Whether the file had violations the last time it was checked
+    )
+
+
+def load_cache() -> Dict[str, CacheEntry]:
+    """
+    Load cache from disk.
+
+    Returns:
+        Dictionary mapping file paths to cache entries
+    """
+    cache_path = get_cache_file_path()
+    if not cache_path.exists():
+        return {}
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            # Convert dict back to CacheEntry objects
+            # Handle backward compatibility: old cache entries may not have had_violations
+            return {
+                path: CacheEntry(
+                    mtime=entry["mtime"],
+                    size=entry["size"],
+                    had_violations=entry.get("had_violations", False),
+                )
+                for path, entry in data.items()
+            }
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        logger.warning(f"Could not parse cache file, starting fresh: {e}")
+        return {}
+
+
+def save_cache(cache: Dict[str, CacheEntry]) -> None:
+    """Save cache to disk."""
+    cache_path = get_cache_file_path()
+    try:
+        # Convert CacheEntry objects to dict for JSON serialization
+        data = {
+            path: {
+                "mtime": entry.mtime,
+                "size": entry.size,
+                "had_violations": entry.had_violations,
+            }
+            for path, entry in cache.items()
+        }
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Could not save cache: {e}")
+
+
+def file_needs_check(file_path: Path, cache: Dict[str, CacheEntry]) -> bool:
+    """
+    Check if a file needs to be checked based on cache.
+
+    Args:
+        file_path: Path to the file to check
+        cache: Current cache dictionary
+
+    Returns:
+        True if file needs checking, False if it can be skipped
+    """
+    try:
+        stat = file_path.stat()
+        file_str = str(file_path.resolve())
+
+        if file_str not in cache:
+            return True
+
+        entry = cache[file_str]
+        # Check if mtime or size changed
+        if entry.mtime != stat.st_mtime or entry.size != stat.st_size:
+            return True
+
+        # If file previously had violations, we need to re-check it
+        # (even if it hasn't changed, to see if violations were fixed)
+        if entry.had_violations:
+            return True
+
+        return False
+    except (OSError, FileNotFoundError):
+        # File doesn't exist or can't be accessed - check it anyway
+        return True
+
+
+def update_cache_entry(
+    file_path: Path, cache: Dict[str, CacheEntry], had_violations: bool = False
+) -> None:
+    """
+    Update cache entry for a file.
+
+    Args:
+        file_path: Path to the file
+        cache: Cache dictionary to update
+        had_violations: Whether the file had violations when checked
+    """
+    try:
+        stat = file_path.stat()
+        file_str = str(file_path.resolve())
+        cache[file_str] = CacheEntry(
+            mtime=stat.st_mtime, size=stat.st_size, had_violations=had_violations
+        )
+    except (OSError, FileNotFoundError):
+        # Can't get file info - skip caching
+        pass
 
 
 @dataclass
@@ -190,14 +343,44 @@ def main(modules_to_lazy_import: Dict[str, LazyImportSettings]) -> None:
         f"Checking for direct imports of lazy modules: {', '.join(modules_to_lazy_import.keys())}"
     )
 
+    # Load cache
+    cache = load_cache()
+    cache_path = get_cache_file_path()
+    logger.info(f"Loaded cache from {cache_path}")
+
     # Find all Python files to check
     target_python_files = find_python_files(backend_dir)
+
+    # Separate files into those that need checking and those that are cached
+    files_to_check: List[Path] = []
+    for file_path in target_python_files:
+        if file_needs_check(file_path, cache):
+            files_to_check.append(file_path)
+        else:
+            # File is cached and hasn't changed - preserve existing cache entry
+            # (We know it doesn't have violations, otherwise it would be re-checked)
+            file_str = str(file_path.resolve())
+            existing_entry = cache.get(file_str)
+            if existing_entry:
+                # Preserve the existing had_violations value (should be False for skipped files)
+                update_cache_entry(
+                    file_path, cache, had_violations=existing_entry.had_violations
+                )
+            else:
+                # Shouldn't happen, but handle it gracefully
+                update_cache_entry(file_path, cache, had_violations=False)
+
+    cached_count = len(target_python_files) - len(files_to_check)
+    if cached_count > 0:
+        logger.info(f"Skipping {cached_count} files (unchanged since last check)")
+
+    logger.info(f"Checking {len(files_to_check)} Python files...")
 
     violations_found = False
     all_violated_modules = set()
 
     # Check each Python file for each module with its specific ignore directories
-    for file_path in target_python_files:
+    for file_path in files_to_check:
         # Determine which modules should be checked for this file
         modules_to_check = set()
         for module_name, settings in modules_to_lazy_import.items():
@@ -206,9 +389,16 @@ def main(modules_to_lazy_import: Dict[str, LazyImportSettings]) -> None:
 
         if not modules_to_check:
             # This file is ignored for all modules
+            update_cache_entry(file_path, cache, had_violations=False)
             continue
 
         result = find_eager_imports(file_path, modules_to_check)
+
+        # Check if this file had violations
+        had_violations = bool(result.violation_lines)
+
+        # Update cache entry after processing
+        update_cache_entry(file_path, cache, had_violations=had_violations)
 
         if result.violation_lines:
             violations_found = True
@@ -224,6 +414,21 @@ def main(modules_to_lazy_import: Dict[str, LazyImportSettings]) -> None:
                 logger.error(
                     f"  💡 You must lazy import {', '.join(sorted(result.violated_modules))} within functions when needed"
                 )
+
+    # Clean up cache entries for files that no longer exist
+    existing_file_paths = {
+        str(file_path.resolve()) for file_path in target_python_files
+    }
+    cache_keys_to_remove = [
+        cached_path
+        for cached_path in cache.keys()
+        if cached_path not in existing_file_paths
+    ]
+    for cached_path in cache_keys_to_remove:
+        del cache[cached_path]
+
+    # Save cache
+    save_cache(cache)
 
     if violations_found:
         violated_modules_str = ", ".join(sorted(all_violated_modules))
