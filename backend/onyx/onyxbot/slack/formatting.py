@@ -65,5 +65,5 @@ class SlackRenderer(HTMLRenderer):
     def paragraph(self, text: str) -> str:
         return f"{text}\n"
 
-    def autolink(self, link: str, is_email: bool) -> str:
-        return link if is_email else self.link("", link, None)
+    def autolink(self, text: str, url: str) -> str:
+        return url if "@" in url else self.link(text or "", url, None)
