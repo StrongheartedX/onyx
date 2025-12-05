@@ -66,4 +66,4 @@ class SlackRenderer(HTMLRenderer):
         return f"{text}\n"
 
     def autolink(self, text: str, url: str) -> str:
-        return url if "@" in url else self.link(text or "", url, None)
+        return url if url.startswith("mailto:") else self.link(text or "", url, None)
