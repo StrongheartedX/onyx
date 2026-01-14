@@ -194,3 +194,35 @@ class SwitchoverType(str, PyEnum):
     REINDEX = "reindex"
     ACTIVE_ONLY = "active_only"
     INSTANT = "instant"
+
+
+class HierarchyNodeType(str, PyEnum):
+    """Types of hierarchy nodes across different sources"""
+
+    # Generic
+    FOLDER = "folder"
+
+    # Root-level type
+    SOURCE = "source"  # Root node for a source (e.g., "Google Drive")
+
+    # Google Drive
+    SHARED_DRIVE = "shared_drive"
+    MY_DRIVE = "my_drive"
+
+    # Confluence
+    SPACE = "space"
+    PAGE = "page"  # Confluence pages can be both hierarchy nodes AND documents
+
+    # Jira
+    PROJECT = "project"
+
+    # Notion
+    DATABASE = "database"
+    WORKSPACE = "workspace"
+
+    # Sharepoint
+    SITE = "site"
+    DRIVE = "drive"  # Document library within a site
+
+    # Slack
+    CHANNEL = "channel"
