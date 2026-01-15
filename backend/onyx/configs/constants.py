@@ -263,7 +263,7 @@ class AuthType(str, Enum):
     OIDC = "oidc"
     SAML = "saml"
 
-    # google auth and basic (default)
+    # google auth and basic
     CLOUD = "cloud"
 
 
