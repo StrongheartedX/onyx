@@ -10,6 +10,7 @@ export interface AuthTypeMetadata {
   requiresVerification: boolean;
   anonymousUserEnabled: boolean | null;
   passwordMinLength: number;
+  oauthEnabled: boolean;
 }
 
 export const getAuthTypeMetadataSS = async (): Promise<AuthTypeMetadata> => {
@@ -23,6 +24,7 @@ export const getAuthTypeMetadataSS = async (): Promise<AuthTypeMetadata> => {
     requires_verification: boolean;
     anonymous_user_enabled: boolean | null;
     password_min_length: number;
+    oauth_enabled: boolean;
   } = await res.json();
 
   let authType: AuthType;
@@ -43,6 +45,7 @@ export const getAuthTypeMetadataSS = async (): Promise<AuthTypeMetadata> => {
       requiresVerification: data.requires_verification,
       anonymousUserEnabled: data.anonymous_user_enabled,
       passwordMinLength: data.password_min_length,
+      oauthEnabled: data.oauth_enabled,
     };
   }
   return {
@@ -51,11 +54,8 @@ export const getAuthTypeMetadataSS = async (): Promise<AuthTypeMetadata> => {
     requiresVerification: data.requires_verification,
     anonymousUserEnabled: data.anonymous_user_enabled,
     passwordMinLength: data.password_min_length,
+    oauthEnabled: data.oauth_enabled,
   };
-};
-
-export const getAuthDisabledSS = async (): Promise<boolean> => {
-  return (await getAuthTypeMetadataSS()).authType === AuthType.DISABLED;
 };
 
 const getOIDCAuthUrlSS = async (nextUrl: string | null): Promise<string> => {
@@ -114,8 +114,6 @@ export const getAuthUrlSS = async (
   // Returns the auth url for the given auth type
 
   switch (authType) {
-    case AuthType.DISABLED:
-      return "";
     case AuthType.BASIC:
       return "";
     case AuthType.GOOGLE_OAUTH: {
@@ -152,8 +150,6 @@ export const logoutSS = async (
   headers: Headers
 ): Promise<Response | null> => {
   switch (authType) {
-    case AuthType.DISABLED:
-      return null;
     case AuthType.SAML: {
       return await logoutSAMLSS(headers);
     }
