@@ -5,18 +5,20 @@ This module provides functions to fetch secrets from AWS Secrets Manager,
 with support for AWS SSO authentication and fallback to environment variables.
 
 Usage:
-    from tests.utils import get_aws_secrets, get_secret_value
-    from tests.utils.secret_names import SecretName, Environment
+    In conftest.py, set up session-scoped fixtures:
 
-    # Fetch all secrets needed for your test in one call
-    secrets = get_aws_secrets([SecretName.OPENAI_API_KEY, SecretName.COHERE_API_KEY])
-    api_key = secrets[SecretName.OPENAI_API_KEY]
+        @pytest.fixture(scope="session")
+        def test_secrets() -> dict[str, str]:
+            return get_aws_secrets(
+                get_secret_names_for_environment(Environment.TEST),
+                environment=Environment.TEST,
+            )
 
-    # Fetch from deploy environment
-    secrets = get_aws_secrets([SecretName.SOME_KEY], environment=Environment.DEPLOY)
+    Then use in test fixtures:
 
-    # Or fetch a single secret with fallback to env vars
-    api_key = get_secret_value(SecretName.OPENAI_API_KEY)
+        @pytest.fixture
+        def openai_client(test_secrets: dict[str, str]) -> OpenAI:
+            return OpenAI(api_key=test_secrets[SecretName.OPENAI_API_KEY])
 
 Configuration via OS environment variables:
     - AWS_REGION: AWS region for Secrets Manager (default: "us-east-1")
@@ -49,6 +51,9 @@ def get_aws_secrets(
     """
     Fetch secrets from AWS Secrets Manager in a single batch request.
 
+    Typically called once at test session startup via a session-scoped fixture,
+    then the returned dict is passed to individual test fixtures.
+
     Uses the default boto3 credential chain, which includes:
     - OS environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
     - Shared credential file (~/.aws/credentials)
@@ -67,13 +72,18 @@ def get_aws_secrets(
         RuntimeError: If secrets cannot be fetched due to auth/access issues.
 
     Example:
-        from tests.utils.secret_names import SecretName, Environment
+        # In conftest.py - fetch once at session start
+        @pytest.fixture(scope="session")
+        def test_secrets() -> dict[str, str]:
+            return get_aws_secrets(
+                get_secret_names_for_environment(Environment.TEST),
+                environment=Environment.TEST,
+            )
 
-        # One API call fetches all secrets
-        secrets = get_aws_secrets([
-            SecretName.OPENAI_API_KEY,
-            SecretName.COHERE_API_KEY,
-        ])
+        # In test fixtures - just use the pre-fetched dict
+        @pytest.fixture
+        def embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
+            return EmbeddingModel(api_key=test_secrets[SecretName.OPENAI_API_KEY])
     """
     if not keys:
         return {}
@@ -137,55 +147,6 @@ def get_aws_secrets(
     )
 
     return secrets
-
-
-def get_secret_value(
-    key: str,
-    environment: str = Environment.TEST,
-    required: bool = True,
-) -> str | None:
-    """
-    Get a specific secret value, with fallback to OS environment variables.
-
-    Useful for local development without AWS access.
-
-    Args:
-        key: The secret name (e.g., "OPENAI_API_KEY")
-        environment: The environment to fetch from (default: Environment.TEST)
-        required: If True, raises an error when the key is not found
-
-    Returns:
-        The secret value, or None if not found and not required
-
-    Raises:
-        RuntimeError: If required=True and the secret is not found
-    """
-    # First, check if there's an OS environment variable override
-    env_value = os.environ.get(key)
-    if env_value:
-        logger.debug(f"Using OS environment variable for {key}")
-        return env_value
-
-    # Try to fetch from AWS Secrets Manager
-    prefix = get_prefix_for_environment(environment)
-    try:
-        secrets = get_aws_secrets([key], environment=environment)
-        value = secrets.get(key)
-        if value:
-            return value
-    except RuntimeError as e:
-        if required:
-            logger.warning(f"Could not fetch from AWS Secrets Manager: {e}")
-        else:
-            logger.debug(f"AWS Secrets Manager not available, skipping {key}")
-
-    if required:
-        raise RuntimeError(
-            f"Required secret '{key}' not found in AWS Secrets Manager "
-            f"(looked for: {prefix}{key}) or OS environment variables."
-        )
-
-    return None
 
 
 def check_secret_exists(

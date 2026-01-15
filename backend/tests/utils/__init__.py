@@ -1,6 +1,5 @@
 from tests.utils.aws_secrets import check_secret_exists
 from tests.utils.aws_secrets import get_aws_secrets
-from tests.utils.aws_secrets import get_secret_value
 from tests.utils.secret_names import Environment
 from tests.utils.secret_names import get_all_environments
 from tests.utils.secret_names import get_prefix_for_environment
@@ -10,7 +9,6 @@ from tests.utils.secret_names import SecretName
 __all__ = [
     # Core functions
     "get_aws_secrets",
-    "get_secret_value",
     "check_secret_exists",
     # Constants
     "SecretName",

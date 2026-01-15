@@ -3,7 +3,6 @@ import pytest
 from onyx.natural_language_processing.search_nlp_models import EmbeddingModel
 from shared_configs.enums import EmbedTextType
 from shared_configs.model_server_models import EmbeddingProvider
-from tests.utils import get_aws_secrets
 from tests.utils import SecretName
 
 VALID_SAMPLE = ["hi", "hello my name is bob", "woah there!!!. 😃"]
@@ -23,8 +22,7 @@ def _run_embeddings(
 
 
 @pytest.fixture
-def openai_embedding_model() -> EmbeddingModel:
-    secrets = get_aws_secrets([SecretName.OPENAI_API_KEY])
+def openai_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
@@ -32,7 +30,7 @@ def openai_embedding_model() -> EmbeddingModel:
         normalize=True,
         query_prefix=None,
         passage_prefix=None,
-        api_key=secrets[SecretName.OPENAI_API_KEY],
+        api_key=test_secrets[SecretName.OPENAI_API_KEY],
         provider_type=EmbeddingProvider.OPENAI,
         api_url=None,
     )
@@ -44,8 +42,7 @@ def test_openai_embedding(openai_embedding_model: EmbeddingModel) -> None:
 
 
 @pytest.fixture
-def cohere_embedding_model() -> EmbeddingModel:
-    secrets = get_aws_secrets([SecretName.COHERE_API_KEY])
+def cohere_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
@@ -53,7 +50,7 @@ def cohere_embedding_model() -> EmbeddingModel:
         normalize=True,
         query_prefix=None,
         passage_prefix=None,
-        api_key=secrets[SecretName.COHERE_API_KEY],
+        api_key=test_secrets[SecretName.COHERE_API_KEY],
         provider_type=EmbeddingProvider.COHERE,
         api_url=None,
     )
@@ -65,8 +62,7 @@ def test_cohere_embedding(cohere_embedding_model: EmbeddingModel) -> None:
 
 
 @pytest.fixture
-def litellm_embedding_model() -> EmbeddingModel:
-    secrets = get_aws_secrets([SecretName.LITELLM_API_KEY, SecretName.LITELLM_API_URL])
+def litellm_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
@@ -74,9 +70,9 @@ def litellm_embedding_model() -> EmbeddingModel:
         normalize=True,
         query_prefix=None,
         passage_prefix=None,
-        api_key=secrets[SecretName.LITELLM_API_KEY],
+        api_key=test_secrets[SecretName.LITELLM_API_KEY],
         provider_type=EmbeddingProvider.LITELLM,
-        api_url=secrets[SecretName.LITELLM_API_URL],
+        api_url=test_secrets[SecretName.LITELLM_API_URL],
     )
 
 
@@ -107,8 +103,7 @@ def test_local_nomic_embedding(local_nomic_embedding_model: EmbeddingModel) -> N
 
 
 @pytest.fixture
-def azure_embedding_model() -> EmbeddingModel:
-    secrets = get_aws_secrets([SecretName.AZURE_API_KEY, SecretName.AZURE_API_URL])
+def azure_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
@@ -116,9 +111,9 @@ def azure_embedding_model() -> EmbeddingModel:
         normalize=True,
         query_prefix=None,
         passage_prefix=None,
-        api_key=secrets[SecretName.AZURE_API_KEY],
+        api_key=test_secrets[SecretName.AZURE_API_KEY],
         provider_type=EmbeddingProvider.AZURE,
-        api_url=secrets[SecretName.AZURE_API_URL],
+        api_url=test_secrets[SecretName.AZURE_API_URL],
     )
 
 
