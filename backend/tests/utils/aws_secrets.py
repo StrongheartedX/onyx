@@ -6,19 +6,19 @@ with support for AWS SSO authentication and fallback to environment variables.
 
 Usage:
     from tests.utils import get_aws_secrets, get_secret_value
-    from tests.utils.secret_names import SecretName, Namespace
+    from tests.utils.secret_names import SecretName, Environment
 
-    # Fetch specific secrets from test namespace (default)
+    # Fetch all secrets needed for your test in one call
     secrets = get_aws_secrets([SecretName.OPENAI_API_KEY, SecretName.COHERE_API_KEY])
     api_key = secrets[SecretName.OPENAI_API_KEY]
 
-    # Fetch from deploy namespace
-    secrets = get_aws_secrets([SecretName.SOME_KEY], namespace=Namespace.DEPLOY)
+    # Fetch from deploy environment
+    secrets = get_aws_secrets([SecretName.SOME_KEY], environment=Environment.DEPLOY)
 
     # Or fetch a single secret with fallback to env vars
     api_key = get_secret_value(SecretName.OPENAI_API_KEY)
 
-Configuration via environment variables:
+Configuration via OS environment variables:
     - AWS_REGION: AWS region for Secrets Manager (default: "us-east-1")
     - AWS_PROFILE: (Optional) AWS profile to use for SSO authentication
 
@@ -33,84 +33,63 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
-from tests.utils.secret_names import get_prefix_for_namespace
-from tests.utils.secret_names import Namespace
+from tests.utils.secret_names import Environment
+from tests.utils.secret_names import get_prefix_for_environment
 
 logger = logging.getLogger(__name__)
 
 # AWS Secrets Manager configuration
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
-# Cache for fetched secrets, keyed by (namespace, secret_name)
-_secrets_cache: dict[tuple[str, str], str] = {}
-
 
 def get_aws_secrets(
     keys: list[str],
-    namespace: str = Namespace.TEST,
+    environment: str = Environment.TEST,
 ) -> dict[str, str]:
     """
-    Fetch specified secrets from AWS Secrets Manager in a single batch request.
+    Fetch secrets from AWS Secrets Manager in a single batch request.
 
     Uses the default boto3 credential chain, which includes:
-    - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    - OS environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
     - Shared credential file (~/.aws/credentials)
     - AWS SSO (if configured in ~/.aws/config and logged in via `aws sso login`)
     - IAM role (if running on EC2/ECS/Lambda)
 
-    Each secret should be stored as a separate secret in AWS Secrets Manager
-    with a plaintext value (not JSON). For example:
-        - onyx/test/OPENAI_API_KEY -> "sk-..."
-        - onyx/deploy/DOCKER_PASSWORD -> "..."
-
     Args:
-        keys: List of secret names to fetch (e.g., ["OPENAI_API_KEY", "COHERE_API_KEY"])
-        namespace: The namespace to fetch from (default: Namespace.TEST)
-                   Different namespaces can have different values for the same key.
+        keys: List of secret names to fetch. All are fetched in one API call.
+        environment: The environment to fetch from (default: Environment.TEST).
 
     Returns:
-        dict: Mapping of secret names to their values (only includes successfully fetched secrets)
+        dict: Mapping of secret names to their values.
+              Only includes successfully fetched secrets.
 
     Raises:
-        RuntimeError: If secrets cannot be fetched due to auth/access issues
+        RuntimeError: If secrets cannot be fetched due to auth/access issues.
 
     Example:
-        from tests.utils.secret_names import SecretName, Namespace
+        from tests.utils.secret_names import SecretName, Environment
 
-        # Test secrets (default)
-        secrets = get_aws_secrets([SecretName.OPENAI_API_KEY])
-
-        # Deploy secrets (elevated permissions)
-        secrets = get_aws_secrets([SecretName.SOME_KEY], namespace=Namespace.DEPLOY)
+        # One API call fetches all secrets
+        secrets = get_aws_secrets([
+            SecretName.OPENAI_API_KEY,
+            SecretName.COHERE_API_KEY,
+        ])
     """
     if not keys:
         return {}
 
-    prefix = get_prefix_for_namespace(namespace)
+    prefix = get_prefix_for_environment(environment)
 
-    # Check which keys we already have cached for this namespace
-    uncached_keys = [k for k in keys if (namespace, k) not in _secrets_cache]
-
-    # If all keys are cached, return from cache
-    if not uncached_keys:
-        return {
-            k: _secrets_cache[(namespace, k)]
-            for k in keys
-            if (namespace, k) in _secrets_cache
-        }
-
-    # Create a session that will use SSO credentials if configured
     session = boto3.Session()
     client = session.client(
         service_name="secretsmanager",
         region_name=AWS_REGION,
     )
 
-    # Build the list of secret IDs to fetch (only uncached ones)
-    secret_ids = [f"{prefix}{name}" for name in uncached_keys]
+    secret_ids = [f"{prefix}{name}" for name in keys]
 
     try:
-        # BatchGetSecretValue can fetch up to 20 secrets in one request
+        # BatchGetSecretValue fetches up to 20 secrets in one request
         response = client.batch_get_secret_value(SecretIdList=secret_ids)
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
@@ -129,7 +108,8 @@ def get_aws_secrets(
                 f"Failed to fetch secrets from AWS Secrets Manager: {e}"
             ) from e
 
-    # Process successfully fetched secrets and add to cache
+    # Build result dict from response
+    secrets: dict[str, str] = {}
     for secret in response.get("SecretValues", []):
         secret_id = secret.get("Name", "")
         secret_value = secret.get("SecretString")
@@ -140,7 +120,7 @@ def get_aws_secrets(
                 key_name = secret_id[len(prefix) :]
             else:
                 key_name = secret_id
-            _secrets_cache[(namespace, key_name)] = secret_value
+            secrets[key_name] = secret_value
 
     # Log any errors for individual secrets
     for error in response.get("Errors", []):
@@ -151,34 +131,27 @@ def get_aws_secrets(
             f"Failed to fetch secret '{secret_id}': [{error_code}] {message}"
         )
 
-    fetched_count = sum(1 for k in uncached_keys if (namespace, k) in _secrets_cache)
     logger.info(
-        f"Fetched {fetched_count}/{len(uncached_keys)} secrets "
-        f"from AWS Secrets Manager (namespace: {namespace}, prefix: {prefix})"
+        f"Fetched {len(secrets)}/{len(keys)} secrets from AWS "
+        f"(environment: {environment})"
     )
 
-    # Return only the requested keys that we have
-    return {
-        k: _secrets_cache[(namespace, k)]
-        for k in keys
-        if (namespace, k) in _secrets_cache
-    }
+    return secrets
 
 
 def get_secret_value(
     key: str,
-    namespace: str = Namespace.TEST,
+    environment: str = Environment.TEST,
     required: bool = True,
 ) -> str | None:
     """
-    Get a specific secret value from AWS Secrets Manager.
+    Get a specific secret value, with fallback to OS environment variables.
 
-    Falls back to environment variables if AWS secrets are not available,
-    allowing local development without AWS access.
+    Useful for local development without AWS access.
 
     Args:
         key: The secret name (e.g., "OPENAI_API_KEY")
-        namespace: The namespace to fetch from (default: Namespace.TEST)
+        environment: The environment to fetch from (default: Environment.TEST)
         required: If True, raises an error when the key is not found
 
     Returns:
@@ -186,29 +159,22 @@ def get_secret_value(
 
     Raises:
         RuntimeError: If required=True and the secret is not found
-
-    Example:
-        from tests.utils.secret_names import SecretName, Namespace
-
-        api_key = get_secret_value(SecretName.OPENAI_API_KEY)
-        deploy_key = get_secret_value(SecretName.SOME_KEY, namespace=Namespace.DEPLOY)
     """
-    # First, check if there's an environment variable override
+    # First, check if there's an OS environment variable override
     env_value = os.environ.get(key)
     if env_value:
-        logger.debug(f"Using environment variable for {key}")
+        logger.debug(f"Using OS environment variable for {key}")
         return env_value
 
     # Try to fetch from AWS Secrets Manager
-    prefix = get_prefix_for_namespace(namespace)
+    prefix = get_prefix_for_environment(environment)
     try:
-        secrets = get_aws_secrets([key], namespace=namespace)
+        secrets = get_aws_secrets([key], environment=environment)
         value = secrets.get(key)
         if value:
             return value
     except RuntimeError as e:
         if required:
-            # Log the AWS error but continue to check if we should fail
             logger.warning(f"Could not fetch from AWS Secrets Manager: {e}")
         else:
             logger.debug(f"AWS Secrets Manager not available, skipping {key}")
@@ -216,7 +182,7 @@ def get_secret_value(
     if required:
         raise RuntimeError(
             f"Required secret '{key}' not found in AWS Secrets Manager "
-            f"(looked for: {prefix}{key}) or environment variables."
+            f"(looked for: {prefix}{key}) or OS environment variables."
         )
 
     return None
@@ -224,23 +190,19 @@ def get_secret_value(
 
 def check_secret_exists(
     key: str,
-    namespace: str = Namespace.TEST,
+    environment: str = Environment.TEST,
 ) -> tuple[bool, str | None]:
     """
     Check if a secret exists in AWS Secrets Manager.
 
-    This is useful for validation tests that verify all expected secrets are configured.
+    Useful for validation tests that verify secrets are configured.
 
     Args:
         key: The secret name to check
-        namespace: The namespace to check in (default: Namespace.TEST)
+        environment: The environment to check in (default: Environment.TEST)
 
     Returns:
         Tuple of (exists: bool, error_message: str | None)
-
-    Example:
-        exists, error = check_secret_exists(SecretName.OPENAI_API_KEY)
-        assert exists, f"Secret missing: {error}"
     """
     session = boto3.Session()
     client = session.client(
@@ -248,7 +210,7 @@ def check_secret_exists(
         region_name=AWS_REGION,
     )
 
-    prefix = get_prefix_for_namespace(namespace)
+    prefix = get_prefix_for_environment(environment)
     secret_id = f"{prefix}{key}"
 
     try:
@@ -258,8 +220,3 @@ def check_secret_exists(
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
         message = e.response.get("Error", {}).get("Message", str(e))
         return False, f"[{error_code}] {message}"
-
-
-def clear_secrets_cache() -> None:
-    """Clear the secrets cache. Useful for testing."""
-    _secrets_cache.clear()

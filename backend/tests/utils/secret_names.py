@@ -1,18 +1,18 @@
 """
-Secret name constants and namespace configuration.
+Secret name constants and environment configuration.
 
 This module loads secret definitions from secrets.yaml and provides
 type-safe constants for use in tests and deployment scripts.
 
 Usage:
-    from tests.utils.secret_names import SecretName, Namespace
+    from tests.utils.secret_names import SecretName, Environment
     from tests.utils import get_aws_secrets
 
-    # For tests (default namespace)
+    # For tests (default environment)
     secrets = get_aws_secrets([SecretName.OPENAI_API_KEY])
 
     # For deployment scripts
-    secrets = get_aws_secrets([SecretName.SOME_KEY], namespace=Namespace.DEPLOY)
+    secrets = get_aws_secrets([SecretName.SOME_KEY], environment=Environment.DEPLOY)
 """
 
 from pathlib import Path
@@ -28,53 +28,53 @@ def _load_secrets_config() -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def _get_namespace_config(namespace: str) -> dict[str, Any]:
-    """Get configuration for a specific namespace."""
+def _get_environment_config(environment: str) -> dict[str, Any]:
+    """Get configuration for a specific environment."""
     config = _load_secrets_config()
-    namespaces = config.get("namespaces", {})
-    if namespace not in namespaces:
+    environments = config.get("environments", {})
+    if environment not in environments:
         raise ValueError(
-            f"Unknown namespace '{namespace}'. "
-            f"Available namespaces: {list(namespaces.keys())}"
+            f"Unknown environment '{environment}'. "
+            f"Available environments: {list(environments.keys())}"
         )
-    return namespaces[namespace]
+    return environments[environment]
 
 
-def get_secret_names_for_namespace(namespace: str) -> list[str]:
-    """Get all secret names defined for a namespace."""
-    ns_config = _get_namespace_config(namespace)
-    secrets = ns_config.get("secrets", [])
+def get_secret_names_for_environment(environment: str) -> list[str]:
+    """Get all secret names defined for an environment."""
+    env_config = _get_environment_config(environment)
+    secrets = env_config.get("secrets", [])
     # Handle empty list represented as [] in YAML
     if secrets is None:
         return []
     return [secret["name"] for secret in secrets]
 
 
-def get_prefix_for_namespace(namespace: str) -> str:
-    """Get the AWS secret prefix for a namespace."""
-    ns_config = _get_namespace_config(namespace)
-    return ns_config.get("prefix", f"onyx/{namespace}/")
+def get_prefix_for_environment(environment: str) -> str:
+    """Get the AWS secret prefix for an environment."""
+    env_config = _get_environment_config(environment)
+    return env_config.get("prefix", f"onyx/{environment}/")
 
 
-def get_all_namespaces() -> list[str]:
-    """Get all available namespace names."""
+def get_all_environments() -> list[str]:
+    """Get all available environment names."""
     config = _load_secrets_config()
-    return list(config.get("namespaces", {}).keys())
+    return list(config.get("environments", {}).keys())
 
 
-class Namespace:
+class Environment:
     """
-    Constants for secret namespaces.
+    Constants for secret environments.
 
-    Namespaces allow the same logical secret name to have different
+    Environments allow the same logical secret name to have different
     values and permissions in different contexts.
 
     Example:
-        # Test namespace (default) - read-only credentials
+        # Test environment (default) - read-only credentials
         secrets = get_aws_secrets([SecretName.API_KEY])
 
-        # Deploy namespace - elevated permissions
-        secrets = get_aws_secrets([SecretName.API_KEY], namespace=Namespace.DEPLOY)
+        # Deploy environment - elevated permissions
+        secrets = get_aws_secrets([SecretName.API_KEY], environment=Environment.DEPLOY)
     """
 
     TEST = "test"
@@ -87,16 +87,16 @@ class SecretName:
 
     Use these constants when requesting secrets to avoid typos and enable
     IDE autocompletion. The same constant can be used across different
-    namespaces.
+    environments.
 
     Example:
-        # Fetch from test namespace (default)
+        # Fetch from test environment (default)
         secrets = get_aws_secrets([SecretName.OPENAI_API_KEY])
 
-        # Fetch from deploy namespace
+        # Fetch from deploy environment
         secrets = get_aws_secrets(
             [SecretName.DOCKER_REGISTRY_PASSWORD],
-            namespace=Namespace.DEPLOY
+            environment=Environment.DEPLOY
         )
     """
 
@@ -115,4 +115,4 @@ class SecretName:
     LITELLM_API_URL = "LITELLM_API_URL"
 
     # Add new secret constants here as needed
-    # When adding, also add to the appropriate namespace in secrets.yaml
+    # When adding, also add to the appropriate environment in secrets.yaml
