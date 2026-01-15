@@ -13,47 +13,50 @@ Usage:
     pytest backend/tests/utils/test_secrets_exist.py -v -k "test-"
 """
 
+from pathlib import Path
+from typing import Any
+
 import pytest
+import yaml
 
 from tests.utils import check_secret_exists
 from tests.utils import Environment
-from tests.utils import get_all_environments
-from tests.utils import get_prefix_for_environment
-from tests.utils import get_secret_names_for_environment
-from tests.utils.secret_names import SecretName
+from tests.utils import SecretName
 
 
-def _get_all_secrets_with_environments() -> list[tuple[str, str]]:
-    """Get all (environment, secret_name) pairs for parametrized testing."""
-    pairs = []
-    for environment in get_all_environments():
-        for secret_name in get_secret_names_for_environment(environment):
-            pairs.append((environment, secret_name))
-    return pairs
+def _load_secrets_yaml() -> dict[str, Any]:
+    """Load the secrets configuration from YAML."""
+    yaml_path = Path(__file__).parent / "secrets.yaml"
+    with open(yaml_path) as f:
+        return yaml.safe_load(f)
 
 
-# Generate test IDs like "test-OPENAI_API_KEY", "deploy-DOCKER_PASSWORD"
-def _make_test_id(param: tuple[str, str]) -> str:
-    environment, secret_name = param
-    return f"{environment}-{secret_name}"
+def _get_all_secrets_with_environments() -> list[tuple[str, str, str]]:
+    """
+    Get all (environment, secret_name, prefix) tuples for parametrized testing.
+    """
+    config = _load_secrets_yaml()
+    results = []
+    for env_name, env_config in config.get("environments", {}).items():
+        prefix = env_config.get("prefix", f"onyx/{env_name}/")
+        secrets = env_config.get("secrets", []) or []
+        for secret in secrets:
+            results.append((env_name, secret["name"], prefix))
+    return results
 
 
 @pytest.mark.parametrize(
-    "environment,secret_name",
+    "environment,secret_name,prefix",
     _get_all_secrets_with_environments(),
-    ids=lambda p: _make_test_id(p) if isinstance(p, tuple) else str(p),
+    ids=lambda p: f"{p[0]}-{p[1]}" if isinstance(p, tuple) else str(p),
 )
-def test_secret_exists(environment: str, secret_name: str) -> None:
+def test_secret_exists(environment: str, secret_name: str, prefix: str) -> None:
     """
     Verify that each defined secret exists in AWS Secrets Manager.
 
     This test is parametrized to run once for each secret defined in secrets.yaml,
-    across all environments. It helps catch configuration issues early, such as:
-    - Missing secrets
-    - Typos in secret names
-    - Permission issues for specific secrets
+    across all environments.
     """
-    prefix = get_prefix_for_environment(environment)
     exists, error = check_secret_exists(secret_name, environment=environment)
     assert exists, (
         f"Secret '{secret_name}' not found in environment '{environment}'.\n"
@@ -66,63 +69,57 @@ def test_secret_exists(environment: str, secret_name: str) -> None:
     )
 
 
-def test_yaml_and_constants_in_sync() -> None:
+def test_yaml_secrets_have_constants() -> None:
     """
-    Verify that secrets.yaml and SecretName class are in sync.
+    Verify that all secrets in YAML have corresponding SecretName constants.
+    """
+    config = _load_secrets_yaml()
 
-    This ensures that when new secrets are added to the YAML file,
-    corresponding constants are also added to the SecretName class.
-    """
-    # Get all string attributes from SecretName (excluding private/dunder)
+    # Get all string attributes from SecretName
     constant_values = {
         v
         for k, v in vars(SecretName).items()
         if not k.startswith("_") and isinstance(v, str)
     }
 
-    # Get all unique secret names from all environments in YAML
+    # Get all unique secret names from YAML
     yaml_names: set[str] = set()
-    for environment in get_all_environments():
-        yaml_names.update(get_secret_names_for_environment(environment))
+    for env_config in config.get("environments", {}).values():
+        secrets = env_config.get("secrets", []) or []
+        for secret in secrets:
+            yaml_names.add(secret["name"])
 
-    # Check for secrets in YAML but not in constants
-    missing_from_constants = yaml_names - constant_values
-    assert not missing_from_constants, (
-        f"Secrets defined in secrets.yaml but missing from SecretName class: "
-        f"{missing_from_constants}\n"
-        f"Please add these constants to SecretName in secret_names.py"
+    missing = yaml_names - constant_values
+    assert not missing, (
+        f"Secrets in secrets.yaml missing from SecretName class: {missing}\n"
+        f"Add these constants to SecretName in secret_names.py"
     )
 
-    # Note: We don't check for constants not in YAML because a constant might
-    # be defined for future use or for an environment not yet configured
 
+def test_yaml_environments_have_constants() -> None:
+    """
+    Verify that all environments in YAML have corresponding Environment constants.
+    """
+    config = _load_secrets_yaml()
 
-def test_environment_constants_match_yaml() -> None:
-    """
-    Verify that Environment class constants match environments defined in YAML.
-    """
     # Get environment constants from class
-    environment_constants = {
+    constant_values = {
         v
         for k, v in vars(Environment).items()
         if not k.startswith("_") and isinstance(v, str)
     }
 
-    # Get environments from YAML
-    yaml_environments = set(get_all_environments())
+    yaml_environments = set(config.get("environments", {}).keys())
 
-    # Check for environments in YAML but not in constants
-    missing_from_constants = yaml_environments - environment_constants
+    missing_from_constants = yaml_environments - constant_values
     assert not missing_from_constants, (
-        f"Environments defined in secrets.yaml but missing from Environment class: "
+        f"Environments in secrets.yaml missing from Environment class: "
         f"{missing_from_constants}\n"
-        f"Please add these constants to Environment in secret_names.py"
+        f"Add these constants to Environment in secret_names.py"
     )
 
-    # Check for constants not in YAML
-    missing_from_yaml = environment_constants - yaml_environments
+    missing_from_yaml = constant_values - yaml_environments
     assert not missing_from_yaml, (
-        f"Constants in Environment class but not defined in secrets.yaml: "
-        f"{missing_from_yaml}\n"
-        f"Please add these environments to secrets.yaml"
+        f"Environment constants not defined in secrets.yaml: {missing_from_yaml}\n"
+        f"Add these environments to secrets.yaml"
     )

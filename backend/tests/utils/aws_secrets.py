@@ -1,16 +1,13 @@
 """
 AWS Secrets Manager utilities for fetching test secrets.
 
-This module provides functions to fetch secrets from AWS Secrets Manager,
-with support for AWS SSO authentication and fallback to environment variables.
-
 Usage:
-    In conftest.py, set up session-scoped fixtures:
+    In conftest.py, set up a session-scoped fixture:
 
         @pytest.fixture(scope="session")
         def test_secrets() -> dict[str, str]:
             return get_aws_secrets(
-                get_secret_names_for_environment(Environment.TEST),
+                [SecretName.OPENAI_API_KEY, SecretName.COHERE_API_KEY],
                 environment=Environment.TEST,
             )
 
@@ -31,17 +28,35 @@ AWS SSO Authentication:
 
 import logging
 import os
+from pathlib import Path
+from typing import Any
 
 import boto3
+import yaml
 from botocore.exceptions import ClientError
 
 from tests.utils.secret_names import Environment
-from tests.utils.secret_names import get_prefix_for_environment
 
 logger = logging.getLogger(__name__)
 
 # AWS Secrets Manager configuration
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+
+
+def _load_secrets_yaml() -> dict[str, Any]:
+    """Load the secrets configuration from YAML."""
+    yaml_path = Path(__file__).parent / "secrets.yaml"
+    with open(yaml_path) as f:
+        return yaml.safe_load(f)
+
+
+def _get_prefix_for_environment(environment: str) -> str:
+    """Get the AWS secret prefix for an environment from YAML config."""
+    config = _load_secrets_yaml()
+    environments = config.get("environments", {})
+    if environment in environments:
+        return environments[environment].get("prefix", f"onyx/{environment}/")
+    return f"onyx/{environment}/"
 
 
 def get_aws_secrets(
@@ -51,14 +66,7 @@ def get_aws_secrets(
     """
     Fetch secrets from AWS Secrets Manager in a single batch request.
 
-    Typically called once at test session startup via a session-scoped fixture,
-    then the returned dict is passed to individual test fixtures.
-
-    Uses the default boto3 credential chain, which includes:
-    - OS environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-    - Shared credential file (~/.aws/credentials)
-    - AWS SSO (if configured in ~/.aws/config and logged in via `aws sso login`)
-    - IAM role (if running on EC2/ECS/Lambda)
+    Typically called once at test session startup via a session-scoped fixture.
 
     Args:
         keys: List of secret names to fetch. All are fetched in one API call.
@@ -66,29 +74,14 @@ def get_aws_secrets(
 
     Returns:
         dict: Mapping of secret names to their values.
-              Only includes successfully fetched secrets.
 
     Raises:
         RuntimeError: If secrets cannot be fetched due to auth/access issues.
-
-    Example:
-        # In conftest.py - fetch once at session start
-        @pytest.fixture(scope="session")
-        def test_secrets() -> dict[str, str]:
-            return get_aws_secrets(
-                get_secret_names_for_environment(Environment.TEST),
-                environment=Environment.TEST,
-            )
-
-        # In test fixtures - just use the pre-fetched dict
-        @pytest.fixture
-        def embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
-            return EmbeddingModel(api_key=test_secrets[SecretName.OPENAI_API_KEY])
     """
     if not keys:
         return {}
 
-    prefix = get_prefix_for_environment(environment)
+    prefix = _get_prefix_for_environment(environment)
 
     session = boto3.Session()
     client = session.client(
@@ -99,7 +92,6 @@ def get_aws_secrets(
     secret_ids = [f"{prefix}{name}" for name in keys]
 
     try:
-        # BatchGetSecretValue fetches up to 20 secrets in one request
         response = client.batch_get_secret_value(SecretIdList=secret_ids)
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
@@ -125,7 +117,6 @@ def get_aws_secrets(
         secret_value = secret.get("SecretString")
 
         if secret_value:
-            # Extract the key name by removing the prefix
             if secret_id.startswith(prefix):
                 key_name = secret_id[len(prefix) :]
             else:
@@ -156,11 +147,7 @@ def check_secret_exists(
     """
     Check if a secret exists in AWS Secrets Manager.
 
-    Useful for validation tests that verify secrets are configured.
-
-    Args:
-        key: The secret name to check
-        environment: The environment to check in (default: Environment.TEST)
+    Useful for validation tests.
 
     Returns:
         Tuple of (exists: bool, error_message: str | None)
@@ -171,7 +158,7 @@ def check_secret_exists(
         region_name=AWS_REGION,
     )
 
-    prefix = get_prefix_for_environment(environment)
+    prefix = _get_prefix_for_environment(environment)
     secret_id = f"{prefix}{key}"
 
     try:
