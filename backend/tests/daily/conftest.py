@@ -14,7 +14,7 @@ from onyx.main import fetch_versioned_implementation
 from onyx.utils.logger import setup_logger
 from tests.utils import Environment
 from tests.utils import get_aws_secrets
-from tests.utils import get_secret_names_for_environment
+from tests.utils import SecretName
 
 logger = setup_logger()
 
@@ -36,7 +36,14 @@ def test_secrets() -> dict[str, str]:
             return OpenAI(api_key=test_secrets[SecretName.OPENAI_API_KEY])
     """
     return get_aws_secrets(
-        get_secret_names_for_environment(Environment.TEST),
+        [
+            SecretName.OPENAI_API_KEY,
+            SecretName.COHERE_API_KEY,
+            SecretName.AZURE_API_KEY,
+            SecretName.AZURE_API_URL,
+            SecretName.LITELLM_API_KEY,
+            SecretName.LITELLM_API_URL,
+        ],
         environment=Environment.TEST,
     )
 
