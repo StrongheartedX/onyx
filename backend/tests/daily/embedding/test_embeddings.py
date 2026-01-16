@@ -22,7 +22,7 @@ def _run_embeddings(
 
 
 @pytest.fixture
-def openai_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
+def openai_embedding_model(test_secrets: dict[SecretName, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
@@ -42,7 +42,7 @@ def test_openai_embedding(openai_embedding_model: EmbeddingModel) -> None:
 
 
 @pytest.fixture
-def cohere_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
+def cohere_embedding_model(test_secrets: dict[SecretName, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
@@ -62,7 +62,7 @@ def test_cohere_embedding(cohere_embedding_model: EmbeddingModel) -> None:
 
 
 @pytest.fixture
-def litellm_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
+def litellm_embedding_model(test_secrets: dict[SecretName, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,
@@ -103,7 +103,7 @@ def test_local_nomic_embedding(local_nomic_embedding_model: EmbeddingModel) -> N
 
 
 @pytest.fixture
-def azure_embedding_model(test_secrets: dict[str, str]) -> EmbeddingModel:
+def azure_embedding_model(test_secrets: dict[SecretName, str]) -> EmbeddingModel:
     return EmbeddingModel(
         server_host="localhost",
         server_port=9000,

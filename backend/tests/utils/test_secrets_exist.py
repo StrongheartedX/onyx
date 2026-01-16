@@ -57,7 +57,11 @@ def test_secret_exists(environment: str, secret_name: str, prefix: str) -> None:
     This test is parametrized to run once for each secret defined in secrets.yaml,
     across all environments.
     """
-    exists, error = check_secret_exists(secret_name, environment=environment)
+    # Convert strings to enums for the check
+    env = Environment(environment)
+    key = SecretName(secret_name)
+
+    exists, error = check_secret_exists(key, environment=env)
     assert exists, (
         f"Secret '{secret_name}' not found in environment '{environment}'.\n"
         f"Expected secret ID: {prefix}{secret_name}\n"
@@ -75,12 +79,8 @@ def test_yaml_secrets_have_constants() -> None:
     """
     config = _load_secrets_yaml()
 
-    # Get all string attributes from SecretName
-    constant_values = {
-        v
-        for k, v in vars(SecretName).items()
-        if not k.startswith("_") and isinstance(v, str)
-    }
+    # Get all enum values
+    enum_values = {member.value for member in SecretName}
 
     # Get all unique secret names from YAML
     yaml_names: set[str] = set()
@@ -89,10 +89,10 @@ def test_yaml_secrets_have_constants() -> None:
         for secret in secrets:
             yaml_names.add(secret["name"])
 
-    missing = yaml_names - constant_values
+    missing = yaml_names - enum_values
     assert not missing, (
-        f"Secrets in secrets.yaml missing from SecretName class: {missing}\n"
-        f"Add these constants to SecretName in secret_names.py"
+        f"Secrets in secrets.yaml missing from SecretName enum: {missing}\n"
+        f"Add these to SecretName in secret_names.py"
     )
 
 
@@ -102,24 +102,20 @@ def test_yaml_environments_have_constants() -> None:
     """
     config = _load_secrets_yaml()
 
-    # Get environment constants from class
-    constant_values = {
-        v
-        for k, v in vars(Environment).items()
-        if not k.startswith("_") and isinstance(v, str)
-    }
+    # Get enum values
+    enum_values = {member.value for member in Environment}
 
     yaml_environments = set(config.get("environments", {}).keys())
 
-    missing_from_constants = yaml_environments - constant_values
-    assert not missing_from_constants, (
-        f"Environments in secrets.yaml missing from Environment class: "
-        f"{missing_from_constants}\n"
-        f"Add these constants to Environment in secret_names.py"
+    missing_from_enum = yaml_environments - enum_values
+    assert not missing_from_enum, (
+        f"Environments in secrets.yaml missing from Environment enum: "
+        f"{missing_from_enum}\n"
+        f"Add these to Environment in secret_names.py"
     )
 
-    missing_from_yaml = constant_values - yaml_environments
+    missing_from_yaml = enum_values - yaml_environments
     assert not missing_from_yaml, (
-        f"Environment constants not defined in secrets.yaml: {missing_from_yaml}\n"
+        f"Environment enum values not defined in secrets.yaml: {missing_from_yaml}\n"
         f"Add these environments to secrets.yaml"
     )

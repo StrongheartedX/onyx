@@ -5,7 +5,7 @@ Usage:
     In conftest.py, set up a session-scoped fixture:
 
         @pytest.fixture(scope="session")
-        def test_secrets() -> dict[str, str]:
+        def test_secrets() -> dict[SecretName, str]:
             return get_aws_secrets(
                 [SecretName.OPENAI_API_KEY, SecretName.COHERE_API_KEY],
                 environment=Environment.TEST,
@@ -14,7 +14,7 @@ Usage:
     Then use in test fixtures:
 
         @pytest.fixture
-        def openai_client(test_secrets: dict[str, str]) -> OpenAI:
+        def openai_client(test_secrets: dict[SecretName, str]) -> OpenAI:
             return OpenAI(api_key=test_secrets[SecretName.OPENAI_API_KEY])
 
 Configuration via OS environment variables:
@@ -36,6 +36,7 @@ import yaml
 from botocore.exceptions import ClientError
 
 from tests.utils.secret_names import Environment
+from tests.utils.secret_names import SecretName
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def _load_secrets_yaml() -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def _get_prefix_for_environment(environment: str) -> str:
+def _get_prefix_for_environment(environment: Environment) -> str:
     """Get the AWS secret prefix for an environment from YAML config."""
     config = _load_secrets_yaml()
     environments = config.get("environments", {})
@@ -60,9 +61,9 @@ def _get_prefix_for_environment(environment: str) -> str:
 
 
 def get_aws_secrets(
-    keys: list[str],
-    environment: str = Environment.TEST,
-) -> dict[str, str]:
+    keys: list[SecretName],
+    environment: Environment = Environment.TEST,
+) -> dict[SecretName, str]:
     """
     Fetch secrets from AWS Secrets Manager in a single batch request.
 
@@ -73,7 +74,7 @@ def get_aws_secrets(
         environment: The environment to fetch from (default: Environment.TEST).
 
     Returns:
-        dict: Mapping of secret names to their values.
+        dict: Mapping of SecretName to secret values.
 
     Raises:
         RuntimeError: If secrets cannot be fetched due to auth/access issues.
@@ -111,7 +112,7 @@ def get_aws_secrets(
             ) from e
 
     # Build result dict from response
-    secrets: dict[str, str] = {}
+    secrets: dict[SecretName, str] = {}
     for secret in response.get("SecretValues", []):
         secret_id = secret.get("Name", "")
         secret_value = secret.get("SecretString")
@@ -121,7 +122,12 @@ def get_aws_secrets(
                 key_name = secret_id[len(prefix) :]
             else:
                 key_name = secret_id
-            secrets[key_name] = secret_value
+            # Convert string back to SecretName enum
+            try:
+                secrets[SecretName(key_name)] = secret_value
+            except ValueError:
+                # Secret exists in AWS but not in SecretName enum - skip
+                logger.warning(f"Secret '{key_name}' not in SecretName enum, skipping")
 
     # Log any errors for individual secrets
     for error in response.get("Errors", []):
@@ -141,8 +147,8 @@ def get_aws_secrets(
 
 
 def check_secret_exists(
-    key: str,
-    environment: str = Environment.TEST,
+    key: SecretName,
+    environment: Environment = Environment.TEST,
 ) -> tuple[bool, str | None]:
     """
     Check if a secret exists in AWS Secrets Manager.

@@ -10,10 +10,12 @@ Usage:
     )
 """
 
+from enum import StrEnum
 
-class Environment:
+
+class Environment(StrEnum):
     """
-    Constants for secret environments.
+    Secret environments.
 
     Environments allow the same logical secret name to have different
     values and permissions in different contexts.
@@ -23,12 +25,12 @@ class Environment:
     DEPLOY = "deploy"
 
 
-class SecretName:
+class SecretName(StrEnum):
     """
-    Constants for secret names.
+    Secret names.
 
     Use these constants when requesting secrets to avoid typos and enable
-    IDE autocompletion.
+    IDE autocompletion and type checking.
     """
 
     # OpenAI

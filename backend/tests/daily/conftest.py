@@ -22,7 +22,7 @@ load_dotenv()
 
 
 @pytest.fixture(scope="session")
-def test_secrets() -> dict[str, str]:
+def test_secrets() -> dict[SecretName, str]:
     """
     Fetch all test secrets from AWS Secrets Manager once at session start.
 
@@ -32,7 +32,7 @@ def test_secrets() -> dict[str, str]:
 
     Example:
         @pytest.fixture
-        def openai_client(test_secrets: dict[str, str]) -> OpenAI:
+        def openai_client(test_secrets: dict[SecretName, str]) -> OpenAI:
             return OpenAI(api_key=test_secrets[SecretName.OPENAI_API_KEY])
     """
     return get_aws_secrets(
