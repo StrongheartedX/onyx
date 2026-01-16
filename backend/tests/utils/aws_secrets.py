@@ -144,33 +144,3 @@ def get_aws_secrets(
     )
 
     return secrets
-
-
-def check_secret_exists(
-    key: SecretName,
-    environment: Environment = Environment.TEST,
-) -> tuple[bool, str | None]:
-    """
-    Check if a secret exists in AWS Secrets Manager.
-
-    Useful for validation tests.
-
-    Returns:
-        Tuple of (exists: bool, error_message: str | None)
-    """
-    session = boto3.Session()
-    client = session.client(
-        service_name="secretsmanager",
-        region_name=AWS_REGION,
-    )
-
-    prefix = _get_prefix_for_environment(environment)
-    secret_id = f"{prefix}{key}"
-
-    try:
-        client.get_secret_value(SecretId=secret_id)
-        return True, None
-    except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "Unknown")
-        message = e.response.get("Error", {}).get("Message", str(e))
-        return False, f"[{error_code}] {message}"

@@ -13,15 +13,20 @@ Usage:
     pytest backend/tests/utils/test_secrets_exist.py -v -k "test-"
 """
 
+import os
 from pathlib import Path
 from typing import Any
 
+import boto3
 import pytest
 import yaml
+from botocore.exceptions import ClientError
 
-from tests.utils import check_secret_exists
 from tests.utils import Environment
 from tests.utils import SecretName
+
+
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
 def _load_secrets_yaml() -> dict[str, Any]:
@@ -29,6 +34,23 @@ def _load_secrets_yaml() -> dict[str, Any]:
     yaml_path = Path(__file__).parent / "secrets.yaml"
     with open(yaml_path) as f:
         return yaml.safe_load(f)
+
+
+def _check_secret_exists(secret_id: str) -> tuple[bool, str | None]:
+    """Check if a secret exists in AWS Secrets Manager."""
+    session = boto3.Session()
+    client = session.client(
+        service_name="secretsmanager",
+        region_name=AWS_REGION,
+    )
+
+    try:
+        client.get_secret_value(SecretId=secret_id)
+        return True, None
+    except ClientError as e:
+        error_code = e.response.get("Error", {}).get("Code", "Unknown")
+        message = e.response.get("Error", {}).get("Message", str(e))
+        return False, f"[{error_code}] {message}"
 
 
 def _get_all_secrets_with_environments() -> list[tuple[str, str, str]]:
@@ -57,18 +79,15 @@ def test_secret_exists(environment: str, secret_name: str, prefix: str) -> None:
     This test is parametrized to run once for each secret defined in secrets.yaml,
     across all environments.
     """
-    # Convert strings to enums for the check
-    env = Environment(environment)
-    key = SecretName(secret_name)
-
-    exists, error = check_secret_exists(key, environment=env)
+    secret_id = f"{prefix}{secret_name}"
+    exists, error = _check_secret_exists(secret_id)
     assert exists, (
         f"Secret '{secret_name}' not found in environment '{environment}'.\n"
-        f"Expected secret ID: {prefix}{secret_name}\n"
+        f"Expected secret ID: {secret_id}\n"
         f"Error: {error}\n\n"
         f"To create this secret, run:\n"
         f"  aws secretsmanager create-secret "
-        f'--name "{prefix}{secret_name}" '
+        f'--name "{secret_id}" '
         f'--secret-string "your-secret-value"'
     )
 
