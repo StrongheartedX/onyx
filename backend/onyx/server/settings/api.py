@@ -32,14 +32,14 @@ basic_router = APIRouter(prefix="/settings")
 
 @admin_router.put("")
 def admin_put_settings(
-    settings: Settings, _: User | None = Depends(current_admin_user)
+    settings: Settings, _: User = Depends(current_admin_user)
 ) -> None:
     store_settings(settings)
 
 
 @basic_router.get("")
 def fetch_settings(
-    user: User | None = Depends(current_user),
+    user: User = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> UserSettings:
     """Settings and notifications are stuffed into this single endpoint to reduce number of
@@ -60,9 +60,7 @@ def fetch_settings(
     )
 
 
-def get_settings_notifications(
-    user: User | None, db_session: Session
-) -> list[Notification]:
+def get_settings_notifications(user: User, db_session: Session) -> list[Notification]:
     """Get notifications for settings page, including product gating and reindex notifications"""
     # Check for product gating notification
     product_notif = get_notifications(

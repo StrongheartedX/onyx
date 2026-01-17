@@ -42,7 +42,7 @@ logger = setup_logger()
 @router.post("/set-new-search-settings")
 def set_new_search_settings(
     search_settings_new: SearchSettingsCreationRequest,
-    _: User | None = Depends(current_admin_user),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> IdReturn:
     """Creates a new EmbeddingModel row and cancels the previous secondary indexing if any
@@ -137,7 +137,7 @@ def set_new_search_settings(
 
 @router.post("/cancel-new-embedding")
 def cancel_new_embedding(
-    _: User | None = Depends(current_admin_user),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> None:
     secondary_search_settings = get_secondary_search_settings(db_session)
@@ -168,7 +168,7 @@ def cancel_new_embedding(
 @router.delete("/delete-search-settings")
 def delete_search_settings_endpoint(
     deletion_request: SearchSettingsDeleteRequest,
-    _: User | None = Depends(current_admin_user),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> None:
     try:
@@ -182,7 +182,7 @@ def delete_search_settings_endpoint(
 
 @router.get("/get-current-search-settings")
 def get_current_search_settings_endpoint(
-    _: User | None = Depends(current_user),
+    _: User = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> SavedSearchSettings:
     current_search_settings = get_current_search_settings(db_session)
@@ -191,7 +191,7 @@ def get_current_search_settings_endpoint(
 
 @router.get("/get-secondary-search-settings")
 def get_secondary_search_settings_endpoint(
-    _: User | None = Depends(current_user),
+    _: User = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> SavedSearchSettings | None:
     secondary_search_settings = get_secondary_search_settings(db_session)
@@ -203,7 +203,7 @@ def get_secondary_search_settings_endpoint(
 
 @router.get("/get-all-search-settings")
 def get_all_search_settings(
-    _: User | None = Depends(current_user),
+    _: User = Depends(current_user),
     db_session: Session = Depends(get_session),
 ) -> FullModelVersionResponse:
     current_search_settings = get_current_search_settings(db_session)
@@ -222,7 +222,7 @@ def get_all_search_settings(
 @router.post("/update-inference-settings")
 def update_saved_search_settings(
     search_settings: SavedSearchSettings,
-    _: User | None = Depends(current_admin_user),
+    _: User = Depends(current_admin_user),
     db_session: Session = Depends(get_session),
 ) -> None:
     # Disallow contextual RAG for cloud deployments
@@ -239,7 +239,7 @@ def update_saved_search_settings(
 
 @router.get("/unstructured-api-key-set")
 def unstructured_api_key_set(
-    _: User | None = Depends(current_admin_user),
+    _: User = Depends(current_admin_user),
 ) -> bool:
     api_key = get_unstructured_api_key()
     print(api_key)
@@ -249,13 +249,13 @@ def unstructured_api_key_set(
 @router.put("/upsert-unstructured-api-key")
 def upsert_unstructured_api_key(
     unstructured_api_key: str,
-    _: User | None = Depends(current_admin_user),
+    _: User = Depends(current_admin_user),
 ) -> None:
     update_unstructured_api_key(unstructured_api_key)
 
 
 @router.delete("/delete-unstructured-api-key")
 def delete_unstructured_api_key_endpoint(
-    _: User | None = Depends(current_admin_user),
+    _: User = Depends(current_admin_user),
 ) -> None:
     delete_unstructured_api_key()
