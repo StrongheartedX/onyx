@@ -140,12 +140,14 @@ def check_seat_availability(
         # No license = no enforcement (self-hosted without license = unlimited)
         return (True, None)
 
-    available_seats = cached.seats - cached.used_seats
+    # Use live seat count to avoid stale cache issues
+    current_used_seats = get_used_seats(tenant_id)
+    available_seats = cached.seats - current_used_seats
 
     if seats_needed > available_seats:
         return (
             False,
-            f"Seat limit reached ({cached.used_seats}/{cached.seats}). "
+            f"Seat limit reached ({current_used_seats}/{cached.seats}). "
             "Purchase more seats in Billing.",
         )
 

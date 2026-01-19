@@ -77,10 +77,13 @@ def add_users_to_tenant(emails: list[str], tenant_id: str) -> None:
     Raises:
         HTTPException: 402 if seat limit is reached.
     """
+    # Deduplicate emails to avoid double-counting
+    unique_emails = set(emails)
+
     # First, count how many NEW users will be added (skip existing mappings)
     with get_session_with_tenant(tenant_id=POSTGRES_DEFAULT_SCHEMA) as check_session:
         new_user_count = 0
-        for email in emails:
+        for email in unique_emails:
             existing = (
                 check_session.query(UserTenantMapping)
                 .filter(
@@ -243,7 +246,28 @@ def accept_user_invite(email: str, tenant_id: str) -> None:
     """
     Accept an invitation to join a tenant.
     This activates the user's mapping to the tenant.
+
+    Raises:
+        HTTPException: 402 if seat limit is reached.
     """
+    # Check if user is already active in this tenant (already counted)
+    with get_session_with_shared_schema() as check_session:
+        already_active_in_tenant = (
+            check_session.query(UserTenantMapping)
+            .filter(
+                UserTenantMapping.email == email,
+                UserTenantMapping.tenant_id == tenant_id,
+                UserTenantMapping.active == True,  # noqa: E712
+            )
+            .first()
+        )
+
+    # If user is not already active in this tenant, check seat availability
+    if not already_active_in_tenant:
+        available, error_msg = check_seat_availability(tenant_id, 1)
+        if not available:
+            raise HTTPException(status_code=402, detail=error_msg)
+
     with get_session_with_shared_schema() as db_session:
         try:
             # First check if there's an active mapping for this user and tenant
