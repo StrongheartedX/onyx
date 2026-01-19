@@ -21,7 +21,7 @@ def load_input_prompts_from_yaml(
         # they will be recreated, but the user can always just deactivate them, just a light inconvenience
 
         insert_input_prompt_if_not_exists(
-            user=None,
+            user=None,  # System-owned prompt
             input_prompt_id=input_prompt.get("id"),
             prompt=input_prompt["prompt"],
             content=input_prompt["content"],

@@ -18,7 +18,7 @@ logger = setup_logger()
 
 
 def insert_input_prompt_if_not_exists(
-    user: User,
+    user: User | None,
     input_prompt_id: int | None,
     prompt: str,
     content: str,
@@ -27,14 +27,15 @@ def insert_input_prompt_if_not_exists(
     db_session: Session,
     commit: bool = True,
 ) -> InputPrompt:
-    is_anonymous = str(user.id) == ANONYMOUS_USER_UUID
+    user_id = user.id if user else None
+    is_anonymous = user is not None and str(user.id) == ANONYMOUS_USER_UUID
     if input_prompt_id is not None:
         input_prompt = (
             db_session.query(InputPrompt).filter_by(id=input_prompt_id).first()
         )
     else:
         query = db_session.query(InputPrompt).filter(InputPrompt.prompt == prompt)
-        query = query.filter(InputPrompt.user_id == user.id)
+        query = query.filter(InputPrompt.user_id == user_id)
         input_prompt = query.first()
 
     if input_prompt is None:
@@ -43,8 +44,10 @@ def insert_input_prompt_if_not_exists(
             prompt=prompt,
             content=content,
             active=active,
-            is_public=is_public or is_anonymous,
-            user_id=user.id,
+            is_public=is_public
+            or is_anonymous
+            or user is None,  # system prompts are public
+            user_id=user_id,
         )
         db_session.add(input_prompt)
 
