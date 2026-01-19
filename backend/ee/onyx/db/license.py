@@ -89,7 +89,7 @@ def delete_license(db_session: Session) -> bool:
 
 
 # -----------------------------------------------------------------------------
-# Seat Counting
+# Seat Counting and Availability
 # -----------------------------------------------------------------------------
 
 
@@ -114,6 +114,42 @@ def get_used_seats(tenant_id: str | None = None) -> int:
                 select(func.count()).select_from(User).where(User.is_active)  # type: ignore
             )
             return result.scalar() or 0
+
+
+def check_seat_availability(
+    tenant_id: str | None = None,
+    seats_needed: int = 1,
+) -> tuple[bool, str | None]:
+    """
+    Check if there are enough seats available for the requested number of users.
+
+    For self-hosted without a license: unlimited seats (no enforcement).
+    For licensed deployments: enforces seat limits.
+
+    Args:
+        tenant_id: Tenant ID (for multi-tenant deployments)
+        seats_needed: Number of additional seats needed (default: 1)
+
+    Returns:
+        (True, None) if seats are available or no license (unlimited).
+        (False, error_message) if at seat limit.
+    """
+    cached = get_cached_license_metadata(tenant_id)
+
+    if cached is None:
+        # No license = no enforcement (self-hosted without license = unlimited)
+        return (True, None)
+
+    available_seats = cached.seats - cached.used_seats
+
+    if seats_needed > available_seats:
+        return (
+            False,
+            f"Seat limit reached ({cached.used_seats}/{cached.seats}). "
+            "Purchase more seats in Billing.",
+        )
+
+    return (True, None)
 
 
 # -----------------------------------------------------------------------------
