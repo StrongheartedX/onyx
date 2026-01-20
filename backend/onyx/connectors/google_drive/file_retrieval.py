@@ -39,15 +39,15 @@ PERMISSION_FULL_DESCRIPTION = (
     "permissions(id, emailAddress, type, domain, allowFileDiscovery, permissionDetails)"
 )
 FILE_FIELDS = (
-    "nextPageToken, files(mimeType, id, name, "
+    "nextPageToken, files(mimeType, id, name, parents, "
     "modifiedTime, webViewLink, shortcutDetails, owners(emailAddress), size)"
 )
 FILE_FIELDS_WITH_PERMISSIONS = (
-    f"nextPageToken, files(mimeType, id, name, {PERMISSION_FULL_DESCRIPTION}, permissionIds, "
+    f"nextPageToken, files(mimeType, id, name, parents, {PERMISSION_FULL_DESCRIPTION}, permissionIds, "
     "modifiedTime, webViewLink, shortcutDetails, owners(emailAddress), size)"
 )
 SLIM_FILE_FIELDS = (
-    f"nextPageToken, files(mimeType, driveId, id, name, {PERMISSION_FULL_DESCRIPTION}, "
+    f"nextPageToken, files(mimeType, driveId, id, name, parents, {PERMISSION_FULL_DESCRIPTION}, "
     "permissionIds, webViewLink, owners(emailAddress), modifiedTime)"
 )
 FOLDER_FIELDS = "nextPageToken, files(id, name, permissions, modifiedTime, webViewLink, shortcutDetails)"
