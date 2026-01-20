@@ -54,6 +54,9 @@ from onyx.db.models import IndexAttempt
 from onyx.file_store.document_batch_storage import DocumentBatchStorage
 from onyx.file_store.document_batch_storage import get_document_batch_storage
 from onyx.indexing.indexing_heartbeat import IndexingHeartbeatInterface
+from onyx.redis.redis_hierarchy import cache_hierarchy_nodes_batch
+from onyx.redis.redis_hierarchy import HierarchyNodeCacheEntry
+from onyx.redis.redis_pool import get_redis_client
 from onyx.utils.logger import setup_logger
 from onyx.utils.variable_functionality import global_version
 from shared_configs.configs import MULTI_TENANT
@@ -575,17 +578,30 @@ def connector_document_extraction(
                 if next_checkpoint:
                     checkpoint = next_checkpoint
 
-                # Process hierarchy nodes batch - upsert directly to Postgres
+                # Process hierarchy nodes batch - upsert to Postgres and cache in Redis
                 if hierarchy_node_batch:
                     with get_session_with_current_tenant() as db_session:
-                        upsert_hierarchy_nodes_batch(
+                        upserted_nodes = upsert_hierarchy_nodes_batch(
                             db_session=db_session,
                             nodes=hierarchy_node_batch,
                             source=db_connector.source,
                             commit=True,
                         )
+
+                        # Cache in Redis for fast ancestor resolution during doc processing
+                        redis_client = get_redis_client(tenant_id=tenant_id)
+                        cache_entries = [
+                            HierarchyNodeCacheEntry.from_db_model(node)
+                            for node in upserted_nodes
+                        ]
+                        cache_hierarchy_nodes_batch(
+                            redis_client=redis_client,
+                            source=db_connector.source,
+                            entries=cache_entries,
+                        )
+
                     logger.debug(
-                        f"Persisted {len(hierarchy_node_batch)} hierarchy nodes "
+                        f"Persisted and cached {len(hierarchy_node_batch)} hierarchy nodes "
                         f"for attempt={index_attempt_id}"
                     )
 
